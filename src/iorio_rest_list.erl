@@ -19,7 +19,7 @@
          to_json/2]).
 
 -record(state, {access, info, bucket}).
--include_lib("iorio_core/include/iorio.hrl").
+-include_lib("iorioc/include/iorio.hrl").
 
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.

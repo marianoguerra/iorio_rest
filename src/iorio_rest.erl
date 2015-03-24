@@ -1,5 +1,6 @@
 -module(iorio_rest).
 -export([setup/1]).
+-ignore_xref([setup/1]).
 
 setup(AccessLogic) ->
     % TODO: check here that secret is binary and algorigthm is a valid one

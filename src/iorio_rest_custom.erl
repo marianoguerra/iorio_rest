@@ -28,7 +28,7 @@
 
 -ignore_xref([behaviour_info/1]).
 
--include_lib("iorio_core/include/iorio.hrl").
+-include_lib("iorioc/include/iorio.hrl").
 
 -record(state, {access, handler_name, handler_state, handler}).
 

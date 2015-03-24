@@ -5,7 +5,7 @@
 -ignore_xref([init/4, stream/3, info/3, terminate/2]).
 
 -include_lib("sblob/include/sblob.hrl").
--include("include/iorio.hrl").
+-include_lib("iorioc/include/iorio.hrl").
 
 -record(state, {channels=[], iorio, token, info, access}).
 

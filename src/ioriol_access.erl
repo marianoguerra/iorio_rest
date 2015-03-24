@@ -19,10 +19,22 @@
 
 -export_type([access_details/0]).
 
--ignore_xref([is_authorized_for_bucket/4, create_user/3, create_user/4,
-              update_user_password/3]).
+-ignore_xref([new/1, new_req/1, update_req/2, is_authorized_for_grant/2,
+              is_authorized_for_bucket/3, is_authorized_for_stream/3,
+              is_authorized_for_bucket/4, is_authorized_for_stream/5,
+              access_details/2, add_group/2, grant/5, revoke/5,
+              authenticate/3, authenticate/4]).
 
--include("include/iorio.hrl").
+-ignore_xref([secret/1, username/1, session_body/1, bucket/1, stream/1]).
+
+-ignore_xref([maybe_grant_bucket_ownership/2, maybe_grant_bucket_ownership/3,
+              permission_to_internal/3]).
+
+-ignore_xref([create_user/3, create_user/4, update_user_password/3, users/1,
+              get_session/2]).
+
+
+-include_lib("iorioc/include/iorio.hrl").
 -include_lib("permiso/include/permiso.hrl").
 
 -record(state, {secret, auth_mod, auth_state}).

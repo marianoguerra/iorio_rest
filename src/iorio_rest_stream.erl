@@ -32,7 +32,7 @@
                 n=3, w=3, timeout=5000}).
 
 -include_lib("sblob/include/sblob.hrl").
--include_lib("iorio_core/include/iorio.hrl").
+-include_lib("iorioc/include/iorio.hrl").
 
 to_int_or(Bin, Default) ->
     Str = binary_to_list(Bin),

@@ -24,7 +24,7 @@
          to_json/2,
          from_json/2]).
 
--include_lib("iorio_core/include/iorio.hrl").
+-include_lib("iorioc/include/iorio.hrl").
 
 -record(state, {access, info, method, body_set=false, username, password}).
 
