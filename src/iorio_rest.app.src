@@ -1,0 +1,14 @@
+{application, iorio_rest,
+ [
+  {description, "An Erlang iorio_rest library"},
+  {vsn, "1"},
+  {modules, [
+             iorio_rest
+            ]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
