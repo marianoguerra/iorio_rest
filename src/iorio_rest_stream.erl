@@ -28,8 +28,8 @@
          to_json/2
         ]).
 
--record(state, {bucket, stream, from_sn, limit, access, info, filename,
-                n=3, w=3, timeout=5000}).
+-record(state, {bucket, stream, from_sn, limit, access, info, filename, mod,
+                mod_state, n=3, w=3, timeout=5000}).
 
 -include_lib("sblob/include/sblob.hrl").
 -include_lib("iorioc/include/iorio.hrl").
@@ -44,7 +44,7 @@ to_int_or(Bin, Default) ->
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.
 
-rest_init(Req, [{access, Access}, {n, N}, {w, W}, {timeout, Timeout}]) ->
+rest_init(Req, Opts) ->
     {Bucket, Req1} = cowboy_req:binding(bucket, Req),
     {Stream, Req2} = cowboy_req:binding(stream, Req1),
     {FromSNStr, Req3} = cowboy_req:qs_val(<<"from">>, Req2, <<"">>),
@@ -54,11 +54,18 @@ rest_init(Req, [{access, Access}, {n, N}, {w, W}, {timeout, Timeout}]) ->
     FromSN = to_int_or(FromSNStr, nil),
     Limit = to_int_or(LimitStr, 1),
 
+    {access, Access} = proplists:lookup(access, Opts),
+    {mod, Mod} = proplists:lookup(mod, Opts),
+    {mod_state, ModState} = proplists:lookup(mod_state, Opts),
+    N = proplists:get_value(n, Opts, 3),
+    W = proplists:get_value(w, Opts, 3),
+    Timeout = proplists:get_value(w, Opts, 5000),
+
     {ok, Info} = ioriol_access:new_req([{bucket, Bucket}, {stream, Stream}]),
 
     {ok, Req5, #state{bucket=Bucket, stream=Stream, from_sn=FromSN,
                       limit=Limit, filename=Filename, n=N, w=W, access=Access,
-                      info=Info, timeout=Timeout}}.
+                      mod=Mod, mod_state=ModState, info=Info, timeout=Timeout}}.
 
 allowed_methods(Req, State) -> {[<<"GET">>, <<"POST">>, <<"PATCH">>], Req, State}.
 
@@ -121,9 +128,9 @@ sblob_to_json_full(#sblob_entry{seqnum=SeqNum, timestamp=Timestamp, data=Data}) 
     ["{\"meta\":{\"id\":", integer_to_list(SeqNum), ",\"t\":",
      integer_to_list(Timestamp), "}, \"data\":", Data, "}"].
 
-to_json(Req, State=#state{bucket=Bucket, stream=Stream, from_sn=From,
+to_json(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket, stream=Stream, from_sn=From,
                           limit=Limit, filename=Filename}) ->
-    Blobs = iorio:get(Bucket, Stream, From, Limit),
+    Blobs = Mod:get(ModState, Bucket, Stream, From, Limit),
     ItemList = lists:map(fun sblob_to_json_full/1, Blobs),
     ItemsJoined = string:join(ItemList, ","),
     Items = ["[", ItemsJoined, "]"],
@@ -136,11 +143,15 @@ to_json(Req, State=#state{bucket=Bucket, stream=Stream, from_sn=From,
 
     {Items, Req1, State}.
 
-put(Bucket, PatchStream, Data, #state{n=N, w=W, timeout=Timeout}) ->
-    iorio:put(Bucket, PatchStream, Data, N, W, Timeout).
+put(Bucket, PatchStream, Data,
+    #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout}) ->
+    Mod:put(ModState, Bucket, PatchStream, Data, N, W, Timeout).
 
-put_conditionally(Bucket, PatchStream, Data, #state{n=N, w=W, timeout=Timeout}, LastSeqNum) ->
-    iorio:put_conditionally(Bucket, PatchStream, Data, LastSeqNum, N, W, Timeout).
+put_conditionally(Bucket, PatchStream, Data,
+                  #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout},
+                  LastSeqNum) ->
+    Mod:put_conditionally(ModState, Bucket, PatchStream, Data, LastSeqNum, N,
+                          W, Timeout).
 
 publish_patch(Bucket, Stream, Data, State) ->
     PatchStream = list_to_binary(io_lib:format("~s-$patch", [Stream])),
@@ -194,13 +205,14 @@ from_json(Req, State=#state{bucket=Bucket, stream=Stream}) ->
             {false, iorio_http:invalid_body(Req1), State}
     end.
 
-from_json_patch(Req, State=#state{bucket=Bucket, stream=Stream}) ->
+from_json_patch(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket,
+                                  stream=Stream}) ->
     {ok, Body, Req1} = cowboy_req:body(Req),
     case iorio_json:is_json(Body) of
         true ->
             case jsonpatch:parse(Body) of
                 {ok, ParsedPatch} ->
-                    case iorio:get_last(Bucket, Stream) of
+                    case Mod:get_last(ModState, Bucket, Stream) of
                         {ok, #sblob_entry{data=Data, seqnum=LastSeqNum}} ->
                             ParsedBlob = iorio_json:decode(Data),
                             case jsonpatch:patch(ParsedPatch, ParsedBlob) of

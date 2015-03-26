@@ -18,16 +18,20 @@
          is_authorized/2,
          to_json/2]).
 
--record(state, {access, info, bucket}).
+-record(state, {access, info, bucket, mod, mod_state}).
 -include_lib("iorioc/include/iorio.hrl").
 
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.
 
-rest_init(Req, [{access, Access}]) ->
+rest_init(Req, Opts) ->
     {Bucket, Req1} = cowboy_req:binding(bucket, Req, any),
     {ok, Info} = ioriol_access:new_req([{bucket, Bucket}]),
-	{ok, Req1, #state{access=Access, info=Info, bucket=Bucket}}.
+    {access, Access} = proplists:lookup(access, Opts),
+    {mod, Mod} = proplists:lookup(mod, Opts),
+    {mod_state, ModState} = proplists:lookup(mod_state, Opts),
+    State = #state{access=Access, info=Info, bucket=Bucket, mod=Mod, mod_state=ModState},
+    {ok, Req1, State}.
 
 allowed_methods(Req, State) -> {[<<"GET">>], Req, State}.
 
@@ -66,10 +70,10 @@ response_to_json(Req, State, Response) ->
 
     {iorio_json:encode([{status, Status}, {data, UniqueItems}]), Req, State}.
 
-to_json(Req, State=#state{bucket=any}) ->
-    response_to_json(Req, State, iorio:list());
-to_json(Req, State=#state{bucket=Bucket}) ->
-    response_to_json(Req, State, iorio:list(Bucket)).
+to_json(Req, State=#state{bucket=any, mod=Mod, mod_state=ModState}) ->
+    response_to_json(Req, State, Mod:list(ModState));
+to_json(Req, State=#state{bucket=Bucket, mod=Mod, mod_state=ModState}) ->
+    response_to_json(Req, State, Mod:list(ModState, Bucket)).
 
 rest_terminate(_Req, _State) ->
 	ok.

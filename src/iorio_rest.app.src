@@ -8,7 +8,11 @@
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  cowboy,
+                  bullet,
+                  lager,
+                  shotgun
                  ]},
   {env, []}
  ]}.

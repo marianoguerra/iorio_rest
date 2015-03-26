@@ -1,22 +1,25 @@
 -module(iorio_rest).
--export([setup/1]).
+-export([setup/3]).
 -ignore_xref([setup/1]).
 
-setup(AccessLogic) ->
+setup(AccessLogic, LogicMod, LogicModState) ->
     % TODO: check here that secret is binary and algorigthm is a valid one
-    {ok, ApiAlgorithm} = env(auth_algorithm),
+    ApiAlgorithm = envd(auth_algorithm, hs512),
     N = envd(req_n, 3),
     W = envd(req_w, 3),
     Timeout = envd(req_timeout, 5000),
     SessionDurationSecs = envd(session_duration_secs, 3600),
 
+    RestListOpts = [{access, AccessLogic}, {mod, LogicMod}, {mod_state, LogicModState}],
+    RestStreamOpts = [{access, AccessLogic}, {n, N}, {w, W},
+                      {timeout, Timeout}, {mod, LogicMod},
+                      {mod_state, LogicModState}],
     BaseDispatchRoutes = [
                {"/listen", bullet_handler, [{handler, iorio_listen_handler},
                                             {access, AccessLogic}]},
-               {"/streams/:bucket", iorio_rest_list, [{access, AccessLogic}]},
-               {"/streams/:bucket/:stream", iorio_rest_stream,
-                [{access, AccessLogic}, {n, N}, {w, W}, {timeout, Timeout}]},
-               {"/buckets/", iorio_rest_list, [{access, AccessLogic}]},
+               {"/streams/:bucket", iorio_rest_list, RestListOpts},
+               {"/streams/:bucket/:stream", iorio_rest_stream, RestStreamOpts },
+               {"/buckets/", iorio_rest_list, RestListOpts},
                {"/access/:bucket/", iorio_rest_access, [{access, AccessLogic}]},
                {"/access/:bucket/:stream", iorio_rest_access, [{access, AccessLogic}]},
 
@@ -24,7 +27,7 @@ setup(AccessLogic) ->
                 [{access, AccessLogic}, {algorithm, ApiAlgorithm},
                  {session_duration_secs, SessionDurationSecs}]},
                {"/users/", iorio_rest_user, [{access, AccessLogic}]},
-               {"/ping", iorio_rest_ping, []},
+               {"/ping", iorio_rest_ping, [{mod, LogicMod}, {mod_state, LogicModState}]},
 
                {"/x/:handler/[...]", iorio_rest_custom, [{access, AccessLogic}]}
     ],
