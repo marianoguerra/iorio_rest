@@ -59,7 +59,7 @@ rest_init(Req, Opts) ->
     {mod_state, ModState} = proplists:lookup(mod_state, Opts),
     N = proplists:get_value(n, Opts, 3),
     W = proplists:get_value(w, Opts, 3),
-    Timeout = proplists:get_value(w, Opts, 5000),
+    Timeout = proplists:get_value(timeout, Opts, 5000),
 
     {ok, Info} = ioriol_access:new_req([{bucket, Bucket}, {stream, Stream}]),
 
@@ -145,7 +145,7 @@ to_json(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket, stream=Str
 
 put(Bucket, PatchStream, Data,
     #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout}) ->
-    Mod:put(ModState, make_ref(), Bucket, PatchStream, Data, N, W, Timeout).
+    Mod:put(ModState, Bucket, PatchStream, Data, N, W, Timeout).
 
 put_conditionally(Bucket, PatchStream, Data,
                   #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout},
