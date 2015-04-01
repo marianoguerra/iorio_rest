@@ -145,7 +145,7 @@ to_json(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket, stream=Str
 
 put(Bucket, PatchStream, Data,
     #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout}) ->
-    Mod:put(ModState, Bucket, PatchStream, Data, N, W, Timeout).
+    Mod:put(ModState, make_ref(), Bucket, PatchStream, Data, N, W, Timeout).
 
 put_conditionally(Bucket, PatchStream, Data,
                   #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout},
