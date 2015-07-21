@@ -11,6 +11,7 @@
          content_types_provided/2,
          is_authorized/2,
          resource_exists/2,
+         options/2,
          from_json/2,
          from_json_patch/2,
          to_json/2
@@ -23,16 +24,17 @@
          content_types_provided/2,
          is_authorized/2,
          resource_exists/2,
+         options/2,
          from_json/2,
          from_json_patch/2,
          to_json/2
         ]).
 
--record(state, {bucket, stream, from_sn, limit, access, info, filename, mod,
-                mod_state, n=3, w=3, timeout=5000}).
+-record(state, {bucket, stream, from_sn, limit, access, info, filename,
+                n=3, w=3, timeout=5000, cors, iorio_mod, iorio_state}).
 
 -include_lib("sblob/include/sblob.hrl").
--include_lib("iorioc/include/iorio.hrl").
+-include("include/iorio.hrl").
 
 to_int_or(Bin, Default) ->
     Str = binary_to_list(Bin),
@@ -44,7 +46,8 @@ to_int_or(Bin, Default) ->
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.
 
-rest_init(Req, Opts) ->
+rest_init(Req, [{access, Access}, {n, N}, {w, W}, {timeout, Timeout},
+                {cors, Cors}, {iorio_mod, IorioMod}, {iorio_state, IorioState}]) ->
     {Bucket, Req1} = cowboy_req:binding(bucket, Req),
     {Stream, Req2} = cowboy_req:binding(stream, Req1),
     {FromSNStr, Req3} = cowboy_req:qs_val(<<"from">>, Req2, <<"">>),
@@ -54,20 +57,18 @@ rest_init(Req, Opts) ->
     FromSN = to_int_or(FromSNStr, nil),
     Limit = to_int_or(LimitStr, 1),
 
-    {access, Access} = proplists:lookup(access, Opts),
-    {mod, Mod} = proplists:lookup(mod, Opts),
-    {mod_state, ModState} = proplists:lookup(mod_state, Opts),
-    N = proplists:get_value(n, Opts, 3),
-    W = proplists:get_value(w, Opts, 3),
-    Timeout = proplists:get_value(timeout, Opts, 5000),
-
     {ok, Info} = ioriol_access:new_req([{bucket, Bucket}, {stream, Stream}]),
 
     {ok, Req5, #state{bucket=Bucket, stream=Stream, from_sn=FromSN,
                       limit=Limit, filename=Filename, n=N, w=W, access=Access,
-                      mod=Mod, mod_state=ModState, info=Info, timeout=Timeout}}.
+                      iorio_mod=IorioMod, iorio_state=IorioState,
+                      info=Info, timeout=Timeout, cors=Cors}}.
 
-allowed_methods(Req, State) -> {[<<"GET">>, <<"POST">>, <<"PATCH">>], Req, State}.
+options(Req, State=#state{cors=Cors}) ->
+    Req1 = iorio_cors:handle_options(Req, stream, Cors),
+    {ok, Req1, State}.
+
+allowed_methods(Req, State) -> {[<<"OPTIONS">>, <<"GET">>, <<"POST">>, <<"PATCH">>], Req, State}.
 
 resource_exists(Req, State) ->
     {Method, Req1} = cowboy_req:method(Req),
@@ -82,26 +83,33 @@ action_for_method(<<"POST">>) ->
 action_for_method(<<"PATCH">>) ->
     ?PERM_STREAM_PUT;
 action_for_method(<<"GET">>) ->
+    ?PERM_STREAM_GET;
+action_for_method(<<"OPTIONS">>) ->
     ?PERM_STREAM_GET.
 
 action_for_request(Req) ->
     {Method, Req1} = cowboy_req:method(Req),
     Action = action_for_method(Method),
-    {Req1, Action}.
+    IsOptions = (Method == <<"OPTIONS">>),
+    {Req1, Action, IsOptions}.
 
 is_authorized(Req, State=#state{access=Access, info=Info}) ->
-    {Req1, Action} = action_for_request(Req),
-    case iorio_session:fill_session(Req1, Access, Info) of
-        {ok, Req2, Info1} ->
-            State1 = State#state{info=Info1},
-            case ioriol_access:is_authorized_for_stream(Access, Info1, Action) of
-                {ok, Info2} ->
-                    {true, Req2, State1#state{info=Info2}};
-                {error, Reason} ->
-                    unauthorized_response(Req2, State1, Info1, Reason, Action)
-            end;
-        {error, Reason, Req1} ->
-            unauthorized_response(Req1, State, Info, Reason, Action)
+    {Req1, Action, IsOptions} = action_for_request(Req),
+    if IsOptions ->
+           {true, Req1, State};
+       true ->
+           case iorio_session:fill_session(Req1, Access, Info) of
+               {ok, Req2, Info1} ->
+                   State1 = State#state{info=Info1},
+                   case ioriol_access:is_authorized_for_stream(Access, Info1, Action) of
+                       {ok, Info2} ->
+                           {true, Req2, State1#state{info=Info2}};
+                       {error, Reason} ->
+                           unauthorized_response(Req2, State1, Info1, Reason, Action)
+                   end;
+               {error, Reason, Req1} ->
+                   unauthorized_response(Req1, State, Info, Reason, Action)
+           end
     end.
 
 
@@ -128,9 +136,10 @@ sblob_to_json_full(#sblob_entry{seqnum=SeqNum, timestamp=Timestamp, data=Data}) 
     ["{\"meta\":{\"id\":", integer_to_list(SeqNum), ",\"t\":",
      integer_to_list(Timestamp), "}, \"data\":", Data, "}"].
 
-to_json(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket, stream=Stream, from_sn=From,
-                          limit=Limit, filename=Filename}) ->
-    Blobs = Mod:get(ModState, Bucket, Stream, From, Limit),
+to_json(Req, State=#state{bucket=Bucket, stream=Stream, from_sn=From,
+                          limit=Limit, filename=Filename,
+                          iorio_mod=Iorio, iorio_state=IorioState}) ->
+    Blobs = Iorio:get(IorioState, Bucket, Stream, From, Limit),
     ItemList = lists:map(fun sblob_to_json_full/1, Blobs),
     ItemsJoined = string:join(ItemList, ","),
     Items = ["[", ItemsJoined, "]"],
@@ -144,14 +153,14 @@ to_json(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket, stream=Str
     {Items, Req1, State}.
 
 put(Bucket, PatchStream, Data,
-    #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout}) ->
-    Mod:put(ModState, Bucket, PatchStream, Data, N, W, Timeout).
+    #state{n=N, w=W, timeout=Timeout, iorio_mod=Iorio, iorio_state=IorioState}) ->
+    Iorio:put(IorioState, Bucket, PatchStream, Data, N, W, Timeout).
 
-put_conditionally(Bucket, PatchStream, Data,
-                  #state{mod=Mod, mod_state=ModState, n=N, w=W, timeout=Timeout},
+put_conditionally(Bucket, PatchStream, Data, #state{n=N, w=W, timeout=Timeout,
+                                                    iorio_mod=Iorio,
+                                                    iorio_state=IorioState},
                   LastSeqNum) ->
-    Mod:put_conditionally(ModState, Bucket, PatchStream, Data, LastSeqNum, N,
-                          W, Timeout).
+    Iorio:put_conditionally(IorioState, Bucket, PatchStream, Data, LastSeqNum, N, W, Timeout).
 
 publish_patch(Bucket, Stream, Data, State) ->
     PatchStream = list_to_binary(io_lib:format("~s-$patch", [Stream])),
@@ -205,14 +214,14 @@ from_json(Req, State=#state{bucket=Bucket, stream=Stream}) ->
             {false, iorio_http:invalid_body(Req1), State}
     end.
 
-from_json_patch(Req, State=#state{mod=Mod, mod_state=ModState, bucket=Bucket,
-                                  stream=Stream}) ->
+from_json_patch(Req, State=#state{bucket=Bucket, stream=Stream,
+                                  iorio_mod=Iorio, iorio_state=IorioState}) ->
     {ok, Body, Req1} = cowboy_req:body(Req),
     case iorio_json:is_json(Body) of
         true ->
             case jsonpatch:parse(Body) of
                 {ok, ParsedPatch} ->
-                    case Mod:get_last(ModState, Bucket, Stream) of
+                    case Iorio:get_last(IorioState, Bucket, Stream) of
                         {ok, #sblob_entry{data=Data, seqnum=LastSeqNum}} ->
                             ParsedBlob = iorio_json:decode(Data),
                             case jsonpatch:patch(ParsedPatch, ParsedBlob) of

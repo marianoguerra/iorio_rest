@@ -3,7 +3,7 @@
          fill_session_from_token/3]).
 
 -include_lib("jwt/include/jwt.hrl").
--include_lib("iorioc/include/iorio.hrl").
+-include("include/iorio.hrl").
 
 session_from_parsed_body(Access, Body) ->
     Username = proplists:get_value(<<"u">>, Body),

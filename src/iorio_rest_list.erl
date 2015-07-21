@@ -8,6 +8,7 @@
          rest_terminate/2,
          allowed_methods/2,
          content_types_provided/2,
+         options/2,
          is_authorized/2,
          to_json/2]).
 
@@ -15,25 +16,29 @@
          rest_terminate/2,
          allowed_methods/2,
          content_types_provided/2,
+         options/2,
          is_authorized/2,
          to_json/2]).
 
--record(state, {access, info, bucket, mod, mod_state}).
--include_lib("iorioc/include/iorio.hrl").
+-record(state, {access, info, bucket, cors, iorio_mod, iorio_state}).
+-include("include/iorio.hrl").
 
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.
 
-rest_init(Req, Opts) ->
+rest_init(Req, [{access, Access}, {cors, Cors},
+                {iorio_mod, IorioMod}, {iorio_state, IorioState}]) ->
+
     {Bucket, Req1} = cowboy_req:binding(bucket, Req, any),
     {ok, Info} = ioriol_access:new_req([{bucket, Bucket}]),
-    {access, Access} = proplists:lookup(access, Opts),
-    {mod, Mod} = proplists:lookup(mod, Opts),
-    {mod_state, ModState} = proplists:lookup(mod_state, Opts),
-    State = #state{access=Access, info=Info, bucket=Bucket, mod=Mod, mod_state=ModState},
+    {ok, Req1, #state{access=Access, info=Info, bucket=Bucket, cors=Cors,
+                      iorio_mod=IorioMod, iorio_state=IorioState}}.
+
+options(Req, State=#state{cors=Cors}) ->
+    Req1 = iorio_cors:handle_options(Req, list, Cors),
     {ok, Req1, State}.
 
-allowed_methods(Req, State) -> {[<<"GET">>], Req, State}.
+allowed_methods(Req, State) -> {[<<"OPTIONS">>, <<"GET">>], Req, State}.
 
 content_types_provided(Req, State) ->
     {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
@@ -70,10 +75,10 @@ response_to_json(Req, State, Response) ->
 
     {iorio_json:encode([{status, Status}, {data, UniqueItems}]), Req, State}.
 
-to_json(Req, State=#state{bucket=any, mod=Mod, mod_state=ModState}) ->
-    response_to_json(Req, State, Mod:list(ModState));
-to_json(Req, State=#state{bucket=Bucket, mod=Mod, mod_state=ModState}) ->
-    response_to_json(Req, State, Mod:list(ModState, Bucket)).
+to_json(Req, State=#state{bucket=any, iorio_mod=Iorio, iorio_state=IorioState}) ->
+    response_to_json(Req, State, Iorio:list(IorioState));
+to_json(Req, State=#state{bucket=Bucket, iorio_mod=Iorio, iorio_state=IorioState}) ->
+    response_to_json(Req, State, Iorio:list(IorioState, Bucket)).
 
 rest_terminate(_Req, _State) ->
 	ok.

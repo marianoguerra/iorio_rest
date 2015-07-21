@@ -8,6 +8,7 @@
          rest_terminate/2,
          allowed_methods/2,
          content_types_provided/2,
+         options/2,
          to_json/2
         ]).
 
@@ -15,27 +16,29 @@
          rest_terminate/2,
          allowed_methods/2,
          content_types_provided/2,
+         options/2,
          to_json/2
         ]).
 
--record(state, {mod, mod_state}).
+-record(state, {cors, iorio_mod, iorio_state}).
 
 init({tcp, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest};
 init({ssl, http}, _Req, _Opts) -> {upgrade, protocol, cowboy_rest}.
 
-rest_init(Req, Opts) ->
-    {mod, Mod} = proplists:lookup(mod, Opts),
-    {mod_state, ModState} = proplists:lookup(mod_state, Opts),
-    {ok, Req, #state{mod=Mod, mod_state=ModState}}.
+rest_init(Req, [{cors, Cors}, {iorio_mod, IorioMod}, {iorio_state, IorioState}]) ->
+    {ok, Req, #state{cors=Cors, iorio_mod=IorioMod, iorio_state=IorioState}}.
 
-allowed_methods(Req, State) -> {[<<"GET">>], Req, State}.
+options(Req, State=#state{cors=Cors}) ->
+    Req1 = iorio_cors:handle_options(Req, ping, Cors),
+    {ok, Req1, State}.
+
+allowed_methods(Req, State) -> {[<<"OPTIONS">>, <<"GET">>], Req, State}.
 
 content_types_provided(Req, State) ->
     {[{{<<"application">>, <<"json">>, '*'}, to_json}], Req, State}.
 
-to_json(Req, State=#state{mod=Mod, mod_state=ModState}) ->
-    lager:info("handling ping"),
-    {pong, Partition} = Mod:ping(ModState),
+to_json(Req, State=#state{iorio_mod=Iorio, iorio_state=IorioState}) ->
+    {pong, Partition} = Iorio:ping(IorioState),
     {iorio_json:encode([{pong, integer_to_binary(Partition)}]), Req, State}.
 
 rest_terminate(_Req, _State) ->
